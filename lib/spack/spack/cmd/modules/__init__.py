@@ -1,24 +1,26 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 """Implementation details of the ``spack module`` command."""
 
 import collections
-import os.path
+import os
 import shutil
 import sys
 
-from llnl.util import filesystem, tty
-from llnl.util.tty import color
-
 import spack.cmd
 import spack.config
+import spack.error
 import spack.modules
 import spack.modules.common
+import spack.modules.error
 import spack.repo
+import spack.store
+from spack.cmd import MultipleSpecsMatch, NoSpecMatches
 from spack.cmd.common import arguments
+from spack.util import filesystem, tty
+from spack.util.tty import color
 
 description = "manipulate module files"
 section = "environment"
@@ -90,18 +92,6 @@ def add_loads_arguments(subparser):
     arguments.add_common_arguments(subparser, ["recurse_dependencies"])
 
 
-class MultipleSpecsMatch(Exception):
-    """Raised when multiple specs match a constraint, in a context where
-    this is not allowed.
-    """
-
-
-class NoSpecMatches(Exception):
-    """Raised when no spec matches a constraint, in a context where
-    this is not allowed.
-    """
-
-
 def one_spec_or_raise(specs):
     """Ensures exactly one spec has been selected, or raises the appropriate
     exception.
@@ -117,20 +107,20 @@ def one_spec_or_raise(specs):
 
 
 def check_module_set_name(name):
-    modules = spack.config.get("modules")
+    modules = spack.config.CONFIG.get("modules")
     if name != "prefix_inspections" and name in modules:
         return
 
     names = [k for k in modules if k != "prefix_inspections"]
 
     if not names:
-        raise spack.config.ConfigError(
+        raise spack.error.ConfigError(
             f"Module set configuration is missing. Cannot use module set '{name}'"
         )
 
     pretty_names = "', '".join(names)
 
-    raise spack.config.ConfigError(
+    raise spack.error.ConfigError(
         f"Cannot use invalid module set '{name}'.",
         f"Valid module set names are: '{pretty_names}'.",
     )
@@ -169,19 +159,21 @@ def loads(module_type, specs, args, out=None):
                 ]
             )
 
-    modules = list(
+    cache: spack.modules.common.ModuleConfigurationCache = {}
+    modules = [
         (
             spec,
-            spack.modules.common.get_module(
+            spack.modules.get_module(
                 module_type,
                 spec,
                 get_full_path=False,
                 module_set_name=args.module_set_name,
                 required=False,
+                cache=cache,
             ),
         )
         for spec in specs
-    )
+    ]
 
     module_commands = {"tcl": "module load ", "lmod": "module load "}
 
@@ -219,33 +211,36 @@ def find(module_type, specs, args):
     else:
         dependency_specs_to_retrieve = []
 
+    cache: spack.modules.common.ModuleConfigurationCache = {}
     try:
         modules = [
-            spack.modules.common.get_module(
+            spack.modules.get_module(
                 module_type,
                 spec,
                 args.full_path,
                 module_set_name=args.module_set_name,
                 required=False,
+                cache=cache,
             )
             for spec in dependency_specs_to_retrieve
         ]
 
         modules.append(
-            spack.modules.common.get_module(
+            spack.modules.get_module(
                 module_type,
                 single_spec,
                 args.full_path,
                 module_set_name=args.module_set_name,
                 required=True,
+                cache=cache,
             )
         )
-    except spack.modules.common.ModuleNotFoundError as e:
+    except spack.modules.error.ModuleNotFoundError as e:
         tty.die(e.message)
 
     if not all(modules):
         tty.warn(_missing_modules_warning)
-    modules = list(x for x in modules if x)
+    modules = [x for x in modules if x]
     print(" ".join(modules))
 
 
@@ -256,11 +251,17 @@ def rm(module_type, specs, args):
     check_module_set_name(args.module_set_name)
 
     module_cls = spack.modules.module_types[module_type]
-    module_exist = lambda x: os.path.exists(module_cls(x, args.module_set_name).layout.filename)
+    cache: spack.modules.common.ModuleConfigurationCache = {}
+    module_exist = lambda x: os.path.exists(
+        module_cls.from_spec(x, args.module_set_name, cache=cache).layout.filename
+    )
 
     specs_with_modules = [spec for spec in specs if module_exist(spec)]
 
-    modules = [module_cls(spec, args.module_set_name) for spec in specs_with_modules]
+    modules = [
+        module_cls.from_spec(spec, args.module_set_name, cache=cache)
+        for spec in specs_with_modules
+    ]
 
     if not modules:
         tty.die("No module file matches your query")
@@ -292,7 +293,7 @@ def refresh(module_type, specs, args):
         return
 
     if not args.upstream_modules:
-        specs = list(s for s in specs if not s.installed_upstream)
+        specs = [s for s in specs if not spack.store.STORE.db.installed_upstream(s)]
 
     if not args.yes_to_all:
         msg = "You are about to regenerate {types} module files for:\n"
@@ -306,10 +307,13 @@ def refresh(module_type, specs, args):
     # Cycle over the module types and regenerate module files
 
     cls = spack.modules.module_types[module_type]
+    cache: spack.modules.common.ModuleConfigurationCache = {}
 
     # Skip unknown packages.
     writers = [
-        cls(spec, args.module_set_name) for spec in specs if spack.repo.PATH.exists(spec.name)
+        cls.from_spec(spec, args.module_set_name, cache=cache)
+        for spec in specs
+        if spack.repo.PATH.exists(spec.name)
     ]
 
     # Filter excluded packages early
@@ -368,16 +372,19 @@ def refresh(module_type, specs, args):
 #: Dictionary populated with the list of sub-commands.
 #: Each sub-command must be callable and accept 3 arguments:
 #:
-#:   - module_type: the type of module it refers to
-#:   - specs : the list of specs to be processed
-#:   - args : namespace containing the parsed command line arguments
+#: - module_type: the type of module it refers to
+#: - specs : the list of specs to be processed
+#: - args : namespace containing the parsed command line arguments
 callbacks = {"refresh": refresh, "rm": rm, "find": find, "loads": loads}
 
 
 def modules_cmd(parser, args, module_type, callbacks=callbacks):
     # Qualifiers to be used when querying the db for specs
     constraint_qualifiers = {
-        "refresh": {"installed": True, "known": lambda x: not spack.repo.PATH.exists(x)}
+        "refresh": {
+            "installed": True,
+            "predicate_fn": lambda x: spack.repo.PATH.exists(x.spec.name),
+        }
     }
     query_args = constraint_qualifiers.get(args.subparser_name, {})
 
@@ -391,8 +398,12 @@ def modules_cmd(parser, args, module_type, callbacks=callbacks):
         query = " ".join(str(s) for s in args.constraint_specs)
         msg = f"the constraint '{query}' matches multiple packages:\n"
         for s in specs:
-            spec_fmt = "{hash:7} {name}{@version}{%compiler}"
-            spec_fmt += "{compiler_flags}{variants}{arch=architecture}"
+            spec_fmt = (
+                "{hash:7} {name}{@version}{compiler_flags}{variants}"
+                "{ platform=architecture.platform}{ os=architecture.os}"
+                "{ target=architecture.target}"
+                "{%compiler}"
+            )
             msg += "\t" + s.cformat(spec_fmt) + "\n"
         tty.die(msg, "In this context exactly *one* match is needed.")
 

@@ -1,5 +1,4 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 import functools
@@ -7,11 +6,11 @@ import functools
 import spack.cmd.common.arguments
 import spack.cmd.modules
 import spack.config
-import spack.modules.tcl
+import spack.modules
 
 
 def add_command(parser, command_dict):
-    tcl_parser = parser.add_parser("tcl", help="manipulate non-hierarchical module files")
+    tcl_parser = parser.add_parser("tcl", help="manipulate tcl module files")
     sp = spack.cmd.modules.setup_parser(tcl_parser)
 
     # Set default module file for a package
@@ -34,8 +33,7 @@ def setdefault(module_type, specs, args):
     spack.cmd.modules.one_spec_or_raise(specs)
     spec = specs[0]
     data = {"modules": {args.module_set_name: {"tcl": {"defaults": [str(spec)]}}}}
-    spack.modules.tcl.configuration_registry = {}
     scope = spack.config.InternalConfigScope("tcl-setdefault", data)
-    with spack.config.override(scope):
-        writer = spack.modules.module_types["tcl"](spec, args.module_set_name)
+    with spack.config.CONFIG.override(scope):
+        writer = spack.modules.module_types["tcl"].from_spec(spec, args.module_set_name)
         writer.update_module_defaults()

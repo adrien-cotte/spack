@@ -1,12 +1,11 @@
-#  Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-#  Spack Project Developers. See the top-level COPYRIGHT file for details.
+#  Copyright Spack Project Developers. See COPYRIGHT file for details.
 
 #  SPDX-License-Identifier: (Apache-2.0 OR MIT)
 # #######################################################################
 
 function Compare-CommonArgs {
     $CMDArgs = $args[0]
-    # These aruments take precedence and call for no futher parsing of arguments
+    # These arguments take precedence and call for no further parsing of arguments
     # invoke actual Spack entrypoint with that context and exit after
     "--help", "-h", "--version", "-V" | ForEach-Object {
         $arg_opt = $_
@@ -126,8 +125,18 @@ function Invoke-SpackLoad {
     }
 }
 
+function Set-SpackRoot {
+    if ([string]::IsNullOrEmpty($Env:SPACK_ROOT)) {
+        Push-Location $PSScriptRoot/..
+        $Env:SPACK_ROOT = $PWD.Path
+        Pop-Location
+    }
+}
+
+Set-SpackRoot
 
 $SpackCMD_params, $SpackSubCommand, $SpackSubCommandArgs = Read-SpackArgs $args
+
 
 if (Compare-CommonArgs $SpackCMD_params) {
     python "$Env:SPACK_ROOT/bin/spack" $SpackCMD_params $SpackSubCommand $SpackSubCommandArgs
@@ -144,3 +153,5 @@ switch($SpackSubCommand)
     "unload" {Invoke-SpackLoad}
     default  {python "$Env:SPACK_ROOT/bin/spack" $SpackCMD_params $SpackSubCommand $SpackSubCommandArgs}
 }
+
+exit $LASTEXITCODE

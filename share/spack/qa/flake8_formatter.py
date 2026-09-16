@@ -1,3 +1,6 @@
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: (Apache-2.0 OR MIT)
 import re
 import sys
 from collections import defaultdict
@@ -32,13 +35,12 @@ pattern_exemptions = {
 
 
 # compile all regular expressions.
-pattern_exemptions = dict(
-    (
-        re.compile(file_pattern),
-        dict((code, [re.compile(p) for p in patterns]) for code, patterns in error_dict.items()),
-    )
+pattern_exemptions = {
+    re.compile(file_pattern): {
+        code: [re.compile(p) for p in patterns] for code, patterns in error_dict.items()
+    }
     for file_pattern, error_dict in pattern_exemptions.items()
-)
+}
 
 
 class SpackFormatter(Pylint):

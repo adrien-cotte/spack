@@ -1,12 +1,11 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 import re
 
 import pytest
 
-import spack.container.writers as writers
+from spack.container import writers
 
 
 def test_manifest(minimal_configuration):
@@ -21,11 +20,11 @@ def test_build_and_run_images(minimal_configuration):
 
     # Test the output of run property
     run = writer.run
-    assert run.image == "ubuntu:18.04"
+    assert run.image == "ubuntu:22.04"
 
     # Test the output of the build property
     build = writer.build
-    assert build.image == "spack/ubuntu-bionic:develop"
+    assert build.image == "spack/ubuntu-jammy:develop"
 
 
 def test_packages(minimal_configuration):

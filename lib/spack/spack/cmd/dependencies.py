@@ -1,26 +1,25 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+import argparse
 import sys
 
-import llnl.util.tty as tty
-from llnl.util.tty.colify import colify
-
 import spack.cmd
-import spack.environment as ev
-import spack.package_base
-import spack.repo
+import spack.context
 import spack.store
+from spack.active_environment import active_environment
 from spack.cmd.common import arguments
+from spack.solver.input_analysis import create_graph_analyzer
+from spack.util import tty
+from spack.util.tty.colify import colify
 
 description = "show dependencies of a package"
-section = "basic"
+section = "query"
 level = "long"
 
 
-def setup_parser(subparser):
+def setup_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "-i",
         "--installed",
@@ -51,13 +50,13 @@ def setup_parser(subparser):
 def dependencies(parser, args):
     specs = spack.cmd.parse_specs(args.spec)
     if len(specs) != 1:
-        tty.die("spack dependencies takes only one spec.")
+        args.subparser.error("takes only one spec")
 
     if args.installed:
-        env = ev.active_environment()
+        env = active_environment()
         spec = spack.cmd.disambiguate_spec(specs[0], env)
 
-        format_string = "{name}{@version}{%compiler}{/hash:7}"
+        format_string = "{name}{@version}{/hash:7}{%compiler}"
         if sys.stdout.isatty():
             tty.msg("Dependencies of %s" % spec.format(format_string, color=True))
         deps = spack.store.STORE.db.installed_relatives(
@@ -70,15 +69,19 @@ def dependencies(parser, args):
 
     else:
         spec = specs[0]
-        dependencies = spack.package_base.possible_dependencies(
+        dependencies, virtuals, _ = create_graph_analyzer(
+            spack.context.default()
+        ).possible_dependencies(
             spec,
             transitive=args.transitive,
             expand_virtuals=args.expand_virtuals,
-            depflag=args.deptype,
+            allowed_deps=args.deptype,
         )
+        if not args.expand_virtuals:
+            dependencies.update(virtuals)
 
         if spec.name in dependencies:
-            del dependencies[spec.name]
+            dependencies.remove(spec.name)
 
         if dependencies:
             colify(sorted(dependencies))

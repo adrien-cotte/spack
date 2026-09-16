@@ -1,14 +1,12 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 
 import pytest
 
-import spack.config
-import spack.tengine as tengine
-from spack.util.path import canonicalize_path
+from spack import tengine
+from spack.config import Configuration, canonicalize_path
 
 
 class TestContext:
@@ -67,10 +65,10 @@ class TestContext:
 
 @pytest.mark.usefixtures("config")
 class TestTengineEnvironment:
-    def test_template_retrieval(self):
+    def test_template_retrieval(self, config: Configuration):
         """Tests the template retrieval mechanism hooked into config files"""
         # Check the directories are correct
-        template_dirs = spack.config.get("config:template_dirs")
+        template_dirs = config.get("config:template_dirs")
         template_dirs = tuple([canonicalize_path(x) for x in template_dirs])
         assert len(template_dirs) == 3
 

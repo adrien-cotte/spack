@@ -1,14 +1,10 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 import platform as py_platform
 
-import archspec.cpu
-
-import spack.target
-from spack.operating_systems.mac_os import MacOs
+from spack.operating_systems.mac_os import MacOs, mac_releases
 from spack.version import Version
 
 from ._platform import Platform
@@ -21,21 +17,17 @@ class Darwin(Platform):
 
     def __init__(self):
         super().__init__("darwin")
-
-        for name in archspec.cpu.TARGETS:
-            self.add_target(name, spack.target.Target(name))
-
-        self.default = archspec.cpu.host().name
-        self.front_end = self.default
-        self.back_end = self.default
-
         mac_os = MacOs()
-
         self.default_os = str(mac_os)
-        self.front_os = str(mac_os)
-        self.back_os = str(mac_os)
-
         self.add_operating_system(str(mac_os), mac_os)
+
+        for version in mac_releases.keys():
+            mac_os_version = MacOs(version)
+            # This is idempotent, so it doesn't matter if it's already there
+            self.add_operating_system(str(mac_os_version), mac_os_version)
+
+    def buildable_oses(self):
+        return {self.default_os}
 
     @classmethod
     def detect(cls):

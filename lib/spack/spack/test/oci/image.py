@@ -1,27 +1,23 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-import re
-
 import pytest
 
-import spack.spec
-from spack.oci.image import Digest, ImageReference, default_tag, tag
+from spack.oci.image import Digest, ImageReference
 
 
 @pytest.mark.parametrize(
     "image_ref, expected",
     [
         (
-            f"example.com:1234/a/b/c:tag@sha256:{'a'*64}",
+            f"example.com:1234/a/b/c:tag@sha256:{'a' * 64}",
             ("example.com:1234", "a/b/c", "tag", Digest.from_sha256("a" * 64)),
         ),
         ("example.com:1234/a/b/c:tag", ("example.com:1234", "a/b/c", "tag", None)),
         ("example.com:1234/a/b/c", ("example.com:1234", "a/b/c", "latest", None)),
         (
-            f"example.com:1234/a/b/c@sha256:{'a'*64}",
+            f"example.com:1234/a/b/c@sha256:{'a' * 64}",
             ("example.com:1234", "a/b/c", "latest", Digest.from_sha256("a" * 64)),
         ),
         # ipv4
@@ -49,17 +45,17 @@ def test_name_parsing(image_ref, expected):
     "image_ref",
     [
         # wrong order of tag and sha
-        f"example.com:1234/a/b/c@sha256:{'a'*64}:tag",
+        f"example.com:1234/a/b/c@sha256:{'a' * 64}:tag",
         # double tag
         "example.com:1234/a/b/c:tag:tag",
         # empty tag
         "example.com:1234/a/b/c:",
         # empty digest
         "example.com:1234/a/b/c@sha256:",
-        # unsupport digest algorithm
-        f"example.com:1234/a/b/c@sha512:{'a'*128}",
+        # unsupported digest algorithm
+        f"example.com:1234/a/b/c@sha512:{'a' * 128}",
         # invalid digest length
-        f"example.com:1234/a/b/c@sha256:{'a'*63}",
+        f"example.com:1234/a/b/c@sha256:{'a' * 63}",
         # whitespace
         "example.com:1234/a/b/c :tag",
         "example.com:1234/a/b/c: tag",
@@ -89,17 +85,15 @@ def test_digest():
         Digest.from_string(valid_digest)
 
 
-@pytest.mark.parametrize(
-    "spec",
-    [
-        # Standard case
-        "short-name@=1.2.3",
-        # Unsupported characters in git version
-        f"git-version@{1:040x}=develop",
-        # Too long of a name
-        f"{'too-long':x<256}@=1.2.3",
-    ],
-)
-def test_default_tag(spec: str):
-    """Make sure that computed image tags are valid."""
-    assert re.fullmatch(tag, default_tag(spack.spec.Spec(spec)))
+def test_url_with_scheme():
+    """Test that scheme=http translates to http:// URLs"""
+    http = ImageReference.from_string("localhost:1234/myimage:abc", scheme="http")
+    https = ImageReference.from_string("localhost:1234/myimage:abc", scheme="https")
+    default = ImageReference.from_string("localhost:1234/myimage:abc")
+
+    assert http != https
+    assert https == default
+
+    assert http.manifest_url() == "http://localhost:1234/v2/myimage/manifests/abc"
+    assert https.manifest_url() == "https://localhost:1234/v2/myimage/manifests/abc"
+    assert default.manifest_url() == "https://localhost:1234/v2/myimage/manifests/abc"

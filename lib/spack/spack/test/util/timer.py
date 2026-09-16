@@ -1,17 +1,16 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 import json
 from io import StringIO
 
-import spack.util.timer as timer
+from spack.util import timer
 
 
 class Tick:
     """Timer that increments the seconds passed by 1
-    everytime tick is called."""
+    every time tick is called."""
 
     def __init__(self):
         self.time = 0.0

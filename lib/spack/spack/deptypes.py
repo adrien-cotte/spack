@@ -1,10 +1,11 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 """Data structures that represent Spack's edge types."""
 
 from typing import Iterable, List, Tuple, Union
+
+from spack.vendor.typing_extensions import Literal
 
 #: Type hint for the low-level dependency input (enum.Flag is too slow)
 DepFlag = int
@@ -13,7 +14,7 @@ DepFlag = int
 DepTypes = Union[str, List[str], Tuple[str, ...]]
 
 #: Individual dependency types
-DepType = str  # Python 3.8: Literal["build", "link", "run", "test"]
+DepType = Literal["build", "link", "run", "test"]
 
 # Flag values. NOTE: these values are not arbitrary, since hash computation imposes
 # the order (link, run, build, test) when depending on the same package multiple times,
@@ -113,13 +114,13 @@ def flag_to_string(x: DepFlag) -> DepType:
 def flag_to_chars(depflag: DepFlag) -> str:
     """Create a string representing deptypes for many dependencies.
 
-    The string will be some subset of 'blrt', like 'bl ', 'b t', or
-    ' lr ' where each letter in 'blrt' stands for 'build', 'link',
-    'run', and 'test' (the dependency types).
+    The string will be some subset of ``blrt``, like ``bl ``, ``b t``, or
+    `` lr `` where each letter in ``blrt`` stands for ``build``, ``link``,
+    ``run``, and ``test`` (the dependency types).
 
     For a single dependency, this just indicates that the dependency has
     the indicated deptypes. For a list of dependnecies, this shows
-    whether ANY dpeendency in the list has the deptypes (so the deptypes
+    whether ANY dependency in the list has the deptypes (so the deptypes
     are merged)."""
     return "".join(
         t_str[0] if t_flag & depflag else " " for t_str, t_flag in zip(ALL_TYPES, ALL_FLAGS)

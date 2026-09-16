@@ -1,12 +1,17 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
+import concurrent.futures
 import multiprocessing
 import os
 import sys
 import traceback
 from typing import Optional
+
+from spack.util.cpus import cpus_available
+
+#: Used in tests to disable parallelism, as tests themselves are parallelized
+ENABLE_PARALLELISM = sys.platform != "win32"
 
 
 class ErrorFromWorker:
@@ -55,7 +60,13 @@ class Task:
 
 
 def imap_unordered(
-    f, list_of_args, *, processes: int, maxtaskperchild: Optional[int] = None, debug=False
+    f,
+    list_of_args,
+    *,
+    processes: int,
+    maxtaskperchild: Optional[int] = None,
+    debug=False,
+    serialize_env: bool = False,
 ):
     """Wrapper around multiprocessing.Pool.imap_unordered.
 
@@ -71,12 +82,49 @@ def imap_unordered(
     Raises:
         RuntimeError: if any error occurred in the worker processes
     """
-    if sys.platform in ("darwin", "win32") or len(list_of_args) == 1:
+
+    if not ENABLE_PARALLELISM or len(list_of_args) <= 1:
         yield from map(f, list_of_args)
         return
 
-    with multiprocessing.Pool(processes, maxtasksperchild=maxtaskperchild) as p:
+    from spack.subprocess_context import GlobalStateMarshaler
+
+    marshaler = GlobalStateMarshaler(serialize_env=serialize_env)
+    with multiprocessing.Pool(
+        processes, initializer=marshaler.restore, maxtasksperchild=maxtaskperchild
+    ) as p:
         for result in p.imap_unordered(Task(f), list_of_args):
             if isinstance(result, ErrorFromWorker):
                 raise RuntimeError(result.stacktrace if debug else str(result))
             yield result
+
+
+class SequentialExecutor(concurrent.futures.Executor):
+    """Executor that runs tasks sequentially in the current thread."""
+
+    def submit(self, fn, *args, **kwargs):
+        """Submit a function to be executed."""
+        future = concurrent.futures.Future()
+        try:
+            future.set_result(fn(*args, **kwargs))
+        except Exception as e:
+            future.set_exception(e)
+        return future
+
+
+def make_concurrent_executor(
+    jobs: Optional[int] = None, *, serialize_env: bool = False
+) -> concurrent.futures.Executor:
+    """Create a concurrent executor.
+
+    If serialize_env is False (default), the active Spack environment is not transmitted to the
+    worker processes, which avoids the cost of pickling potentially large environment state."""
+
+    if not ENABLE_PARALLELISM or sys.version_info[:2] == (3, 6):
+        return SequentialExecutor()
+
+    from spack.subprocess_context import GlobalStateMarshaler
+
+    jobs = jobs or min(cpus_available(), 16)
+    marshaler = GlobalStateMarshaler(serialize_env=serialize_env)
+    return concurrent.futures.ProcessPoolExecutor(jobs, initializer=marshaler.restore)  # novermin

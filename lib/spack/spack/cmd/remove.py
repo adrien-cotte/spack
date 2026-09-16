@@ -1,19 +1,19 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-import llnl.util.tty as tty
+import argparse
 
 import spack.cmd
 from spack.cmd.common import arguments
+from spack.util import tty
 
 description = "remove specs from an environment"
 section = "environments"
 level = "long"
 
 
-def setup_parser(subparser):
+def setup_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "-a", "--all", action="store_true", help="remove all specs from (clear) the environment"
     )
@@ -31,7 +31,7 @@ def setup_parser(subparser):
 
 
 def remove(parser, args):
-    env = spack.cmd.require_active_env(cmd_name="remove")
+    env = spack.cmd.require_active_env(args.subparser)
 
     with env.write_transaction():
         if args.all:

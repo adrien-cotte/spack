@@ -1,35 +1,41 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+import pathlib
+
 import pytest
 
-import spack.store
-from spack.database import InstallStatuses
+import spack.concretize
+import spack.spec
+from spack.enums import InstallRecordStatus
 from spack.main import SpackCommand
+from spack.store import Store
 
 install = SpackCommand("install")
 uninstall = SpackCommand("uninstall")
 deprecate = SpackCommand("deprecate")
 find = SpackCommand("find")
 
-pytestmark = pytest.mark.not_on_windows("does not run on windows")
+# Unit tests should not be affected by the user's managed environments
+pytestmark = pytest.mark.usefixtures("mutable_mock_env_path")
 
 
-def test_deprecate(mock_packages, mock_archive, mock_fetch, install_mockery):
-    install("libelf@0.8.13")
-    install("libelf@0.8.10")
+def test_deprecate(
+    mock_packages, mock_archive, mock_fetch, temporary_store: Store, install_mockery
+):
+    install("--fake", "libelf@0.8.13")
+    install("--fake", "libelf@0.8.10")
 
-    all_installed = spack.store.STORE.db.query()
+    all_installed = temporary_store.db.query("libelf")
     assert len(all_installed) == 2
 
     deprecate("-y", "libelf@0.8.10", "libelf@0.8.13")
 
-    non_deprecated = spack.store.STORE.db.query()
-    all_available = spack.store.STORE.db.query(installed=any)
+    non_deprecated = temporary_store.db.query("libelf")
+    all_available = temporary_store.db.query("libelf", installed=InstallRecordStatus.ANY)
     assert all_available == all_installed
-    assert non_deprecated == spack.store.STORE.db.query("libelf@0.8.13")
+    assert non_deprecated == temporary_store.db.query("libelf@0.8.13")
 
 
 def test_deprecate_fails_no_such_package(mock_packages, mock_archive, mock_fetch, install_mockery):
@@ -40,128 +46,167 @@ def test_deprecate_fails_no_such_package(mock_packages, mock_archive, mock_fetch
     output = deprecate("-y", "libelf@0.8.10", "libelf@0.8.13", fail_on_error=False)
     assert "Spec 'libelf@0.8.10' matches no installed packages" in output
 
-    install("libelf@0.8.10")
+    install("--fake", "libelf@0.8.10")
 
     output = deprecate("-y", "libelf@0.8.10", "libelf@0.8.13", fail_on_error=False)
     assert "Spec 'libelf@0.8.13' matches no installed packages" in output
 
 
-def test_deprecate_install(mock_packages, mock_archive, mock_fetch, install_mockery):
-    """Tests that the ```-i`` option allows us to deprecate in favor of a spec
-    that is not yet installed."""
-    install("libelf@0.8.10")
-
-    to_deprecate = spack.store.STORE.db.query()
+def test_deprecate_install(
+    mock_packages, mock_archive, mock_fetch, temporary_store: Store, install_mockery, monkeypatch
+):
+    """Tests that the -i option allows us to deprecate in favor of a spec
+    that is not yet installed.
+    """
+    install("--fake", "libelf@0.8.10")
+    to_deprecate = temporary_store.db.query("libelf")
     assert len(to_deprecate) == 1
 
     deprecate("-y", "-i", "libelf@0.8.10", "libelf@0.8.13")
 
-    non_deprecated = spack.store.STORE.db.query()
-    deprecated = spack.store.STORE.db.query(installed=InstallStatuses.DEPRECATED)
+    non_deprecated = temporary_store.db.query("libelf")
+    deprecated = temporary_store.db.query("libelf", installed=InstallRecordStatus.DEPRECATED)
     assert deprecated == to_deprecate
     assert len(non_deprecated) == 1
     assert non_deprecated[0].satisfies("libelf@0.8.13")
 
 
-def test_deprecate_deps(mock_packages, mock_archive, mock_fetch, install_mockery):
+def test_deprecate_deps(mock_packages, mock_archive, mock_fetch, temporary_store, install_mockery):
     """Test that the deprecate command deprecates all dependencies properly."""
-    install("libdwarf@20130729 ^libelf@0.8.13")
-    install("libdwarf@20130207 ^libelf@0.8.10")
+    install("--fake", "libdwarf@20130729 ^libelf@0.8.13")
+    install("--fake", "libdwarf@20130207 ^libelf@0.8.10")
 
-    new_spec = spack.spec.Spec("libdwarf@20130729^libelf@0.8.13").concretized()
-    old_spec = spack.spec.Spec("libdwarf@20130207^libelf@0.8.10").concretized()
+    new_spec = spack.concretize.concretize_one("libdwarf@20130729^libelf@0.8.13")
+    old_spec = spack.concretize.concretize_one("libdwarf@20130207^libelf@0.8.10")
 
-    all_installed = spack.store.STORE.db.query()
+    all_installed = temporary_store.db.query()
 
     deprecate("-y", "-d", "libdwarf@20130207", "libdwarf@20130729")
 
-    non_deprecated = spack.store.STORE.db.query()
-    all_available = spack.store.STORE.db.query(installed=any)
-    deprecated = spack.store.STORE.db.query(installed=InstallStatuses.DEPRECATED)
+    non_deprecated = temporary_store.db.query()
+    all_available = temporary_store.db.query(installed=InstallRecordStatus.ANY)
+    deprecated = temporary_store.db.query(installed=InstallRecordStatus.DEPRECATED)
 
     assert all_available == all_installed
     assert sorted(all_available) == sorted(deprecated + non_deprecated)
 
-    assert sorted(non_deprecated) == sorted(list(new_spec.traverse()))
-    assert sorted(deprecated) == sorted(list(old_spec.traverse()))
+    assert sorted(non_deprecated) == sorted(new_spec.traverse())
+    assert sorted(deprecated) == sorted([old_spec, old_spec["libelf"]])
 
 
-def test_uninstall_deprecated(mock_packages, mock_archive, mock_fetch, install_mockery):
+def test_uninstall_deprecated(
+    mock_packages, mock_archive, mock_fetch, temporary_store: Store, install_mockery
+):
     """Tests that we can still uninstall deprecated packages."""
-    install("libelf@0.8.13")
-    install("libelf@0.8.10")
+    install("--fake", "libelf@0.8.13")
+    install("--fake", "libelf@0.8.10")
 
     deprecate("-y", "libelf@0.8.10", "libelf@0.8.13")
 
-    non_deprecated = spack.store.STORE.db.query()
+    non_deprecated = temporary_store.db.query()
 
     uninstall("-y", "libelf@0.8.10")
 
-    assert spack.store.STORE.db.query() == spack.store.STORE.db.query(installed=any)
-    assert spack.store.STORE.db.query() == non_deprecated
+    assert temporary_store.db.query() == temporary_store.db.query(
+        installed=InstallRecordStatus.ANY
+    )
+    assert temporary_store.db.query() == non_deprecated
 
 
-def test_deprecate_already_deprecated(mock_packages, mock_archive, mock_fetch, install_mockery):
+def test_deprecate_already_deprecated(
+    mock_packages, mock_archive, mock_fetch, temporary_store: Store, install_mockery
+):
     """Tests that we can re-deprecate a spec to change its deprecator."""
-    install("libelf@0.8.13")
-    install("libelf@0.8.12")
-    install("libelf@0.8.10")
+    install("--fake", "libelf@0.8.13")
+    install("--fake", "libelf@0.8.12")
+    install("--fake", "libelf@0.8.10")
 
-    deprecated_spec = spack.spec.Spec("libelf@0.8.10").concretized()
+    deprecated_spec = spack.concretize.concretize_one("libelf@0.8.10")
 
     deprecate("-y", "libelf@0.8.10", "libelf@0.8.12")
 
-    deprecator = spack.store.STORE.db.deprecator(deprecated_spec)
-    assert deprecator == spack.spec.Spec("libelf@0.8.12").concretized()
+    deprecator = temporary_store.db.deprecator(deprecated_spec)
+    assert deprecator == spack.concretize.concretize_one("libelf@0.8.12")
 
     deprecate("-y", "libelf@0.8.10", "libelf@0.8.13")
 
-    non_deprecated = spack.store.STORE.db.query()
-    all_available = spack.store.STORE.db.query(installed=any)
+    non_deprecated = temporary_store.db.query("libelf")
+    all_available = temporary_store.db.query("libelf", installed=InstallRecordStatus.ANY)
     assert len(non_deprecated) == 2
     assert len(all_available) == 3
 
-    deprecator = spack.store.STORE.db.deprecator(deprecated_spec)
-    assert deprecator == spack.spec.Spec("libelf@0.8.13").concretized()
+    deprecator = temporary_store.db.deprecator(deprecated_spec)
+    assert deprecator == spack.concretize.concretize_one("libelf@0.8.13")
 
 
-def test_deprecate_deprecator(mock_packages, mock_archive, mock_fetch, install_mockery):
+def test_deprecate_deprecator(
+    mock_packages, mock_archive, mock_fetch, temporary_store: Store, install_mockery
+):
     """Tests that when a deprecator spec is deprecated, its deprecatee specs
     are updated to point to the new deprecator."""
-    install("libelf@0.8.13")
-    install("libelf@0.8.12")
-    install("libelf@0.8.10")
+    install("--fake", "libelf@0.8.13")
+    install("--fake", "libelf@0.8.12")
+    install("--fake", "libelf@0.8.10")
 
-    first_deprecated_spec = spack.spec.Spec("libelf@0.8.10").concretized()
-    second_deprecated_spec = spack.spec.Spec("libelf@0.8.12").concretized()
-    final_deprecator = spack.spec.Spec("libelf@0.8.13").concretized()
+    first_deprecated_spec = spack.concretize.concretize_one("libelf@0.8.10")
+    second_deprecated_spec = spack.concretize.concretize_one("libelf@0.8.12")
+    final_deprecator = spack.concretize.concretize_one("libelf@0.8.13")
 
     deprecate("-y", "libelf@0.8.10", "libelf@0.8.12")
 
-    deprecator = spack.store.STORE.db.deprecator(first_deprecated_spec)
+    deprecator = temporary_store.db.deprecator(first_deprecated_spec)
     assert deprecator == second_deprecated_spec
 
     deprecate("-y", "libelf@0.8.12", "libelf@0.8.13")
 
-    non_deprecated = spack.store.STORE.db.query()
-    all_available = spack.store.STORE.db.query(installed=any)
+    non_deprecated = temporary_store.db.query("libelf")
+    all_available = temporary_store.db.query("libelf", installed=InstallRecordStatus.ANY)
     assert len(non_deprecated) == 1
     assert len(all_available) == 3
 
-    first_deprecator = spack.store.STORE.db.deprecator(first_deprecated_spec)
+    first_deprecator = temporary_store.db.deprecator(first_deprecated_spec)
     assert first_deprecator == final_deprecator
-    second_deprecator = spack.store.STORE.db.deprecator(second_deprecated_spec)
+    second_deprecator = temporary_store.db.deprecator(second_deprecated_spec)
     assert second_deprecator == final_deprecator
 
 
 def test_concretize_deprecated(mock_packages, mock_archive, mock_fetch, install_mockery):
     """Tests that the concretizer throws an error if we concretize to a
     deprecated spec"""
-    install("libelf@0.8.13")
-    install("libelf@0.8.10")
+    install("--fake", "libelf@0.8.13")
+    install("--fake", "libelf@0.8.10")
 
     deprecate("-y", "libelf@0.8.10", "libelf@0.8.13")
 
     spec = spack.spec.Spec("libelf@0.8.10")
     with pytest.raises(spack.spec.SpecDeprecatedError):
-        spec.concretize()
+        spack.concretize.concretize_one(spec)
+
+
+@pytest.mark.usefixtures("mock_packages", "mock_archive", "mock_fetch", "install_mockery")
+@pytest.mark.regression("46915")
+def test_deprecate_spec_with_external_dependency(
+    mutable_config, temporary_store, tmp_path: pathlib.Path
+):
+    """Tests that we can deprecate a spec that has an external dependency"""
+    packages_yaml = {
+        "libelf": {
+            "buildable": False,
+            "externals": [{"spec": "libelf@0.8.13", "prefix": str(tmp_path / "libelf")}],
+        }
+    }
+    mutable_config.set("packages", packages_yaml)
+
+    install("--fake", "dyninst ^libdwarf@=20111030")
+    install("--fake", "libdwarf@=20130729")
+
+    # Ensure we are using the external libelf
+    db = temporary_store.db
+    libelf = db.query_one("libelf")
+    assert libelf.external
+
+    deprecated_spec = db.query_one("libdwarf@=20111030")
+    new_libdwarf = db.query_one("libdwarf@=20130729")
+    deprecate("-y", "libdwarf@=20111030", "libdwarf@=20130729")
+
+    assert db.deprecator(deprecated_spec) == new_libdwarf

@@ -1,20 +1,18 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 import os
+import pathlib
 
 import pytest
 
-from llnl.util.filesystem import mkdirp, touch, working_dir
-
-import spack.config
-import spack.repo
+import spack.concretize
+from spack.config import Configuration
 from spack.fetch_strategy import SvnFetchStrategy
-from spack.spec import Spec
 from spack.stage import Stage
 from spack.util.executable import which
+from spack.util.filesystem import mkdirp, touch, working_dir
 from spack.version import Version
 
 pytestmark = [
@@ -27,7 +25,14 @@ pytestmark = [
 
 @pytest.mark.parametrize("type_of_test", ["default", "rev0"])
 @pytest.mark.parametrize("secure", [True, False])
-def test_fetch(type_of_test, secure, mock_svn_repository, config, mutable_mock_repo, monkeypatch):
+def test_fetch(
+    type_of_test,
+    secure,
+    mock_svn_repository,
+    config: Configuration,
+    mutable_mock_repo,
+    monkeypatch,
+):
     """Tries to:
 
     1. Fetch the repo using a fetch strategy constructed with
@@ -42,12 +47,12 @@ def test_fetch(type_of_test, secure, mock_svn_repository, config, mutable_mock_r
     h = mock_svn_repository.hash
 
     # Construct the package under test
-    s = Spec("svn-test").concretized()
+    s = spack.concretize.concretize_one("svn-test")
     monkeypatch.setitem(s.package.versions, Version("svn"), t.args)
 
     # Enter the stage directory and check some properties
     with s.package.stage:
-        with spack.config.override("config:verify_ssl", secure):
+        with config.override("config:verify_ssl", secure):
             s.package.do_stage()
 
         with working_dir(s.package.stage.source_path):
@@ -72,9 +77,9 @@ def test_fetch(type_of_test, secure, mock_svn_repository, config, mutable_mock_r
             assert h() == t.revision
 
 
-def test_svn_extra_fetch(tmpdir):
+def test_svn_extra_fetch(tmp_path: pathlib.Path):
     """Ensure a fetch after downloading is effectively a no-op."""
-    testpath = str(tmpdir)
+    testpath = str(tmp_path)
 
     fetcher = SvnFetchStrategy(svn="file:///not-a-real-svn-repo")
     assert fetcher is not None

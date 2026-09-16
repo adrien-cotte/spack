@@ -1,5 +1,4 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
@@ -8,11 +7,10 @@
 .. literalinclude:: _spack_root/lib/spack/spack/schema/database_index.py
    :lines: 17-
 """
+
 from typing import Any, Dict
 
 import spack.schema.spec
-
-# spack.schema.spec.properties
 
 properties: Dict[str, Any] = {
     "database": {
@@ -23,10 +21,10 @@ properties: Dict[str, Any] = {
             "installs": {
                 "type": "object",
                 "patternProperties": {
-                    r"^[\w\d]{32}$": {
+                    r"^[a-z0-9]{32}$": {
                         "type": "object",
                         "properties": {
-                            "spec": spack.schema.spec.properties,
+                            "spec": spack.schema.spec.spec_node,
                             "path": {"oneOf": [{"type": "string"}, {"type": "null"}]},
                             "installed": {"type": "boolean"},
                             "ref_count": {"type": "integer", "minimum": 0},

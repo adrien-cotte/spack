@@ -1,15 +1,13 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 import os
 from typing import BinaryIO, Optional, Tuple
 
-import llnl.util.tty as tty
-from llnl.util.filesystem import BaseDirectoryVisitor, visit_directory_tree
-
+from spack.util import tty
 from spack.util.elf import ElfParsingError, parse_elf
+from spack.util.filesystem import BaseDirectoryVisitor, visit_directory_tree
 
 
 def should_keep(path: bytes) -> bool:
@@ -117,7 +115,7 @@ def post_install(spec, explicit=None):
         return
 
     # Only enable on platforms using ELF.
-    if not spec.satisfies("platform=linux") and not spec.satisfies("platform=cray"):
+    if not spec.satisfies("platform=linux"):
         return
 
     visit_directory_tree(spec.prefix, ElfFilesWithRPathVisitor())

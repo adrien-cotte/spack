@@ -1,5 +1,4 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
@@ -9,15 +8,15 @@
 a stack trace and drops the user into an interpreter.
 
 """
+
 import collections
 import sys
 import time
 from contextlib import contextmanager
 from typing import Callable, Dict, List
 
-from llnl.util.lang import pretty_seconds_formatter
-
 import spack.util.spack_json as sjson
+from spack.util.lang import pretty_seconds_formatter
 
 TimerEvent = collections.namedtuple("TimerEvent", ("time", "running", "label"))
 TimeTracker = collections.namedtuple("TimeTracker", ("total", "start", "count", "path"))
@@ -182,7 +181,7 @@ class Timer(BaseTimer):
         if extra_attributes:
             data.update(extra_attributes)
         if out:
-            out.write(sjson.dump(data))
+            out.write(sjson.dumps(data))
         else:
             return data
 

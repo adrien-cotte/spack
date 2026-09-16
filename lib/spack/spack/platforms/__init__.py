@@ -1,12 +1,11 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 import contextlib
+from typing import Callable, List
 
-from ._functions import _host, by_name, platforms, prevent_cray_detection, reset
+from ._functions import _host, by_name, platforms, reset
 from ._platform import Platform
-from .cray import Cray
 from .darwin import Darwin
 from .freebsd import FreeBSD
 from .linux import Linux
@@ -15,7 +14,6 @@ from .windows import Windows
 
 __all__ = [
     "Platform",
-    "Cray",
     "Darwin",
     "Linux",
     "FreeBSD",
@@ -25,7 +23,7 @@ __all__ = [
     "host",
     "by_name",
     "reset",
-    "prevent_cray_detection",
+    "using_libc_compatibility",
 ]
 
 #: The "real" platform of the host running Spack. This should not be changed
@@ -34,7 +32,12 @@ real_host = _host
 
 #: The current platform used by Spack. May be swapped by the use_platform
 #: context manager.
-host = _host
+host: Callable[[], Platform] = _host
+
+#: Callbacks invoked when the current platform changes through the use_platform context manager.
+#: Higher-level modules that cache host-dependent state (e.g. spack.config) register a callback
+#: here to invalidate it.
+on_host_changed: List[Callable[[], None]] = []
 
 
 class _PickleableCallable:
@@ -50,30 +53,26 @@ class _PickleableCallable:
         return self.return_value
 
 
+def using_libc_compatibility() -> bool:
+    """Returns True if we are using libc compatibility on this platform."""
+    return host().name == "linux"
+
+
 @contextlib.contextmanager
 def use_platform(new_platform):
     global host
 
-    import spack.compilers
-    import spack.config
-
-    msg = '"{0}" must be an instance of Platform'
-    assert isinstance(new_platform, Platform), msg.format(new_platform)
+    assert isinstance(new_platform, Platform), f'"{new_platform}" must be an instance of Platform'
 
     original_host_fn = host
 
     try:
         host = _PickleableCallable(new_platform)
-
-        # Clear configuration and compiler caches
-        spack.config.CONFIG.clear_caches()
-        spack.compilers._cache_config_files = []
-
+        for callback in on_host_changed:
+            callback()
         yield new_platform
 
     finally:
         host = original_host_fn
-
-        # Clear configuration and compiler caches
-        spack.config.CONFIG.clear_caches()
-        spack.compilers._cache_config_files = []
+        for callback in on_host_changed:
+            callback()

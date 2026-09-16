@@ -1,19 +1,16 @@
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 import os
 
-import llnl.util.tty as tty
-from llnl.util.filesystem import BaseDirectoryVisitor, visit_directory_tree
-from llnl.util.lang import elide_list
-
 import spack.bootstrap
 import spack.config
 import spack.relocate
+from spack.util import tty
 from spack.util.elf import ElfParsingError, parse_elf
-from spack.util.executable import Executable
+from spack.util.filesystem import BaseDirectoryVisitor, visit_directory_tree
+from spack.util.lang import elide_list
 
 
 def is_shared_library_elf(filepath):
@@ -28,7 +25,7 @@ def is_shared_library_elf(filepath):
         with open(filepath, "rb") as f:
             elf = parse_elf(f, interpreter=True, dynamic_section=True)
             return elf.has_pt_dynamic and (elf.has_soname or not elf.has_pt_interp)
-    except (IOError, OSError, ElfParsingError):
+    except (OSError, ElfParsingError):
         return False
 
 
@@ -133,7 +130,7 @@ def find_and_patch_sonames(prefix, exclude_list, patchelf):
 
 def post_install(spec, explicit=None):
     # Skip if disabled
-    if not spack.config.get("config:shared_linking:bind", False):
+    if not spack.config.CONFIG.get("config:shared_linking:bind", False):
         return
 
     # Skip externals
@@ -141,7 +138,7 @@ def post_install(spec, explicit=None):
         return
 
     # Only enable on platforms using ELF.
-    if not spec.satisfies("platform=linux") and not spec.satisfies("platform=cray"):
+    if not spec.satisfies("platform=linux"):
         return
 
     # Disable this hook when bootstrapping, to avoid recursion.
@@ -149,10 +146,9 @@ def post_install(spec, explicit=None):
         return
 
     # Should failing to locate patchelf be a hard error?
-    patchelf_path = spack.relocate._patchelf()
-    if not patchelf_path:
+    patchelf = spack.relocate._patchelf()
+    if not patchelf:
         return
-    patchelf = Executable(patchelf_path)
 
     fixes = find_and_patch_sonames(spec.prefix, spec.package.non_bindable_shared_objects, patchelf)
 

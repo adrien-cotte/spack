@@ -1,7 +1,6 @@
 #!/usr/bin/env fish
 #
-# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
-# Spack Project Developers. See the top-level COPYRIGHT file for details.
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
@@ -397,6 +396,12 @@ spack env activate spack_test_env
 is_set SPACK_ENV
 
 echo "Testing 'despacktivate'"
+despacktivate
+is_not_set SPACK_ENV
+
+echo "Testing 'spacktivate' abbreviation"
+spacktivate spack_test_env
+is_set SPACK_ENV
 despacktivate
 is_not_set SPACK_ENV
 
